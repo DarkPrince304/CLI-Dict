@@ -1,0 +1,32 @@
+#!/usr/bin/env node
+
+var http = require("http");
+var arguments = process.argv.slice(2);
+var command = arguments[0];
+var word = arguments[1];
+
+console.log(command, word);
+
+var options = {
+  host: 'api.wordnik.com',
+  path: '/v4/word.json/'+word+'/definitions?api_key=a2a73e7b926c924fad7001ca3111acd55af2ffabf50eb4ae5'
+};
+
+callback = function(response) {
+  var str = '';
+
+  //another chunk of data has been recieved, so append it to `str`
+  response.on('data', function (chunk) {
+    str += chunk;
+  });
+
+  //the whole response has been recieved, so we just print it out here
+  response.on('end', function () {
+  	var res = JSON.parse(str);
+  	for(var i = 0; i < res.length; i++ ) {
+  		console.log(res[i].text)
+  	}
+  });
+}
+
+http.request(options, callback).end();
