@@ -20,12 +20,12 @@ var arguments = process.argv.slice(2);
 var command = "";
 var word = "";
 
-function perform(command) {
+function perform(word, command) {
   if(command === "dict") {
-    perform("def");
-    perform("syn");
-    perform("ant");
-    perform("ex");
+    perform(word, "def");
+    perform(word, "syn");
+    perform(word, "ant");
+    perform(word, "ex");
     return;
   }
   var choice="", msg="", param="";
@@ -57,24 +57,32 @@ function perform(command) {
 
 if(arguments.length === 1 || command === "dict") {
   word = arguments[0];
-  perform("dict");
+  perform(word, "dict");
 } else if(arguments.length === 0) {
-
+  callApi("words.json","wordOfTheDay","","");
 } else {
   command = arguments[0];
   word = arguments[1];
-  perform(command);
+  perform(word, command);
 }
 
 function callApi(apiType, word, choice, param) {
 
   var result = {};
 
+  if(word === "wordOfTheDay") {
+    choice = word;
+    word = "";
+  }
   var options = {
     host: 'api.wordnik.com',
     path: '/v4/'+apiType+'/'+word+'/'+choice+'?'+param+'api_key=a2a73e7b926c924fad7001ca3111acd55af2ffabf50eb4ae5'
   };
 
+  if(choice === "wordOfTheDay") {
+    var newOptionsPath = options.path.replace("//","/");
+    options.path = newOptionsPath;
+  }
 
   callback = function (response) {
 
@@ -86,6 +94,15 @@ function callApi(apiType, word, choice, param) {
 
     response.on('end', function() {
       result = JSON.parse(str);
+      if(choice === "wordOfTheDay") {
+        var name = result.word;
+        client.hmset(result.word, {
+          name: name
+        },  function(err, reply) {
+        });
+        perform(name, "dict");
+        return;
+      }
       client.hgetall(word, function(err, wordObj) {
         if(choice === 'relatedWords' && result[0] ) {
           var onym = param.substr(18,3);
