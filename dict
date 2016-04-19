@@ -1,32 +1,98 @@
 #!/usr/bin/env node
 
 var http = require("http");
+var express = require('express');
+var app = express();
+var bodyParser = require('body-parser');
+var redis = require('redis');
+
+var client = redis.createClient();
+client.on('connect', function() {
+  console.log("Connected");
+});
+
+app.use(bodyParser.urlencoded({
+    extended: true
+}));
+
+app.use(bodyParser.json());
+
 var arguments = process.argv.slice(2);
 var command = arguments[0];
 var word = arguments[1];
-
 console.log(command, word);
 
-var options = {
-  host: 'api.wordnik.com',
-  path: '/v4/word.json/'+word+'/definitions?api_key=a2a73e7b926c924fad7001ca3111acd55af2ffabf50eb4ae5'
-};
 
-callback = function(response) {
-  var str = '';
+client.get(word, function(err, reply) {
+  if(reply == null) {
+    client.set(word, function(err, reply) {
+      console.log(reply);
+    });
+    callApi('word.json', word, command);
+  } else {
+    console.log(reply[command]);
+  }
+});
 
-  //another chunk of data has been recieved, so append it to `str`
-  response.on('data', function (chunk) {
-    str += chunk;
-  });
+function callApi(apiType, word, choice ) {
 
-  //the whole response has been recieved, so we just print it out here
-  response.on('end', function () {
-  	var res = JSON.parse(str);
-  	for(var i = 0; i < res.length; i++ ) {
-  		console.log(res[i].text)
-  	}
-  });
-}
+  var result = {};
+  var param = '';
+  if (choice === 'def') {
+    choice = 'definitions';
+  } else if (choice === 'ant' || choice == 'syn') {
+    param = 'relationshipTypes='+choice+'onym&';
+    choice = 'relatedWords';
+  } else if (choice === 'ex') {
+    choice = 'examples';
+  }
 
-http.request(options, callback).end();
+  var options = {
+    host: 'api.wordnik.com',
+    path: '/v4/'+apiType+'/'+word+'/'+choice+'?'+param+'api_key=a2a73e7b926c924fad7001ca3111acd55af2ffabf50eb4ae5'
+  };
+
+
+  callback = function (response) {
+
+    var str = '';
+
+    response.on('data', function(chunk) {
+      str += chunk;
+    })
+
+    response.on('end', function() {
+      result = JSON.parse(str);
+      client.get(word, function(err, reply) {
+        if(choice == 'relatedWords') {
+          console.log("\nThe "+param.substr(18,3)+'onyms are: \n');
+          for( var i = 0 ; i < result[0].words.length; i++ ) {
+            console.log((i+1)+". "+result[0].words[i]+"\n");
+
+          }
+        } else if( choice == 'definitions') {
+          var defs = "";
+          console.log("\nThe definitions are: \n");
+          for( var i = 0 ; i < result.length; i++ ) {
+            // console.log((i+1)+". "+result[i].text+"\n");
+            defs = defs + "\n"+(i+1)+". "+result[i].text+"\n";
+          }
+          client.set("defs", defs, function(err, reply) {
+            console.log(defs);
+            console.log(reply);
+          });
+        } else if(choice = 'examples' ) {
+          console.log("\nThe examples are: \n");
+          for( var i = 0 ; i < result.examples.length; i++ ) {
+            console.log((i+1)+". "+result.examples[i].text+"\n");
+          }
+        }
+
+      }) // end redis get
+
+    }); // end response.end
+
+  } // end callback
+
+  var req = http.request(options, callback).end();
+} // end callApi
