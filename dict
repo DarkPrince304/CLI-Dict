@@ -8,7 +8,6 @@ var redis = require('redis');
 
 var client = redis.createClient();
 client.on('connect', function() {
-  console.log("Connected");
 });
 
 app.use(bodyParser.urlencoded({
@@ -23,10 +22,12 @@ var word = arguments[1];
 console.log(command, word);
 
 
-client.get(word, function(err, reply) {
-  if(reply == null) {
-    client.set(word, function(err, reply) {
-      console.log(reply);
+client.hgetall(word, function(err, reply) {
+  if(reply == null || reply[command] == undefined) {
+    var name = word;
+    client.hmset(word, {
+      name: name
+    },  function(err, reply) {
     });
     callApi('word.json', word, command);
   } else {
@@ -63,29 +64,38 @@ function callApi(apiType, word, choice ) {
 
     response.on('end', function() {
       result = JSON.parse(str);
-      client.get(word, function(err, reply) {
+      client.hgetall(word, function(err, wordObj) {
         if(choice == 'relatedWords') {
+          var onym = param.substr(18,3);
+          var res = "";
           console.log("\nThe "+param.substr(18,3)+'onyms are: \n');
           for( var i = 0 ; i < result[0].words.length; i++ ) {
-            console.log((i+1)+". "+result[0].words[i]+"\n");
-
+            res = res + "\n" + (i+1)+". "+result[0].words[i]+"\n";
           }
+          wordObj[onym] = res;
+          client.hmset(word, wordObj, function(err, reply) {
+            console.log(res);
+          });
         } else if( choice == 'definitions') {
-          var defs = "";
+          var def = "";
           console.log("\nThe definitions are: \n");
           for( var i = 0 ; i < result.length; i++ ) {
-            // console.log((i+1)+". "+result[i].text+"\n");
-            defs = defs + "\n"+(i+1)+". "+result[i].text+"\n";
+            def = def + "\n"+(i+1)+". "+result[i].text+"\n";
           }
-          client.set("defs", defs, function(err, reply) {
-            console.log(defs);
-            console.log(reply);
+          wordObj.def = def;
+          client.hmset(word, wordObj, function(err, reply) {
+            console.log(def);
           });
         } else if(choice = 'examples' ) {
+          var ex = "";
           console.log("\nThe examples are: \n");
           for( var i = 0 ; i < result.examples.length; i++ ) {
-            console.log((i+1)+". "+result.examples[i].text+"\n");
+            ex = ex+ "\n"+(i+1)+". "+result.examples[i].text+"\n";
           }
+          wordObj.ex = ex;
+          client.hmset(word, wordObj, function(err, reply) {
+            console.log(ex);
+          });
         }
 
       }) // end redis get
