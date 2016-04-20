@@ -5,6 +5,7 @@ var express = require('express');
 var app = express();
 var bodyParser = require('body-parser');
 var redis = require('redis');
+var prompt = require('prompt');
 
 var client = redis.createClient();
 client.on('connect', function() {
@@ -16,9 +17,12 @@ app.use(bodyParser.urlencoded({
 
 app.use(bodyParser.json());
 
+prompt.start();
+
 var arguments = process.argv.slice(2);
 var command = "";
 var word = "";
+var randWord = "";
 
 function perform(word, command) {
   if(command === "dict") {
@@ -49,14 +53,145 @@ function perform(word, command) {
       });
       callApi('word.json', word, choice, param);
     } else {
-      console.log(("\n\nThe "+msg+" are:").toUpperCase());
-      console.log(reply[command]);
+      (arguments[0] != "play")?console.log(("\n\nThe "+msg+" are:").toUpperCase()):"";
+      (arguments[0] != "play")?console.log(reply[command]):"";
+      // return reply[command];
     }
   });  
 }
 
-if(arguments.length === 1 || command === "dict") {
-  word = arguments[0];
+String.prototype.shuffle = function () {
+    var a = this.split(""),
+        n = a.length;
+
+    for(var i = n - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var tmp = a[i];
+        a[i] = a[j];
+        a[j] = tmp;
+    }
+    return a.join("");
+}
+
+client.set("randomWord","immobile");
+function showDef(defs) {
+  if(defs.length) {
+    console.log("\nDEFINITION\n");
+    def = defs[Math.floor(Math.random()*defs.length)];
+    def = def.substr(3,def.length);
+    console.log(def);
+  } else {
+    console.log("\nNO DEFINITIONS AVAILABLE FOR THIS WORD");
+  }
+}
+
+function showSyn(syns) {
+  if(syns.length) {
+    console.log("\nSYNONYM\n");
+    var index = Math.floor(Math.random()*syns.length)
+    syn = syns[index];
+    syn = syn.substr(3,syn.length);
+    console.log(syn);
+    syns.splice(index,1);
+  } else {
+    console.log("\nNO SYNONYMS AVAILABLE FOR THIS WORD");
+  }
+  return syns;
+}
+
+function showAnt(ants) {
+  if(ants.length) {
+    console.log("\nANTONYM\n");
+    ant = ants[Math.floor(Math.random()*ants.length)];
+    ant = ant.substr(3,ant.length);
+    console.log(ant);
+  } else {
+    console.log("\nNO ANTONYMS AVAILABLE FOR THIS WORD");
+  }
+}
+
+function matchWords(input, word, syns) {
+  if(input === word) {
+    console.log("CORRECT ANSWER!");
+    return true;
+  } 
+  for( var i = 0; i < syns.length; i++ ) {
+    if(input === syns[i].substr(3,syns[i].length)) {
+      console.log("CORRECT ANSWER!");
+      return true;
+    }
+  }
+  return false;
+}
+
+function playGame(word, defs, syns, ants, exs) {
+  var ans = word;
+  console.log("\nGUESS THE WORD.\n");
+  var input = ""
+  prompt.get("word", function(err, res) {
+    input = res.word;
+    var out = matchWords(input, word, syns);
+    if(out) {
+      return;
+    }
+    console.log("\nWRONG GUESS? WHAT WILL YOU DO?\n1 - Try Again\n2 - Hint\n3 - Give up!\n");
+    prompt.get("choice", function(err, res) {
+      if(res.choice == 1) {
+        playGame(word, defs, syns, ants, exs);
+      } else if( res.choice == 3) {
+        perform(word, "dict");
+      } else if( res.choice == 2) {
+        console.log("\n1 - Another Definition\n2 - Another Synonym\n3 - Another Antonym\n4 - Jumbled Word\n");
+        prompt.get("hint", function(err, res) {
+          var hint = res.hint;
+          if(hint == 1) {
+            showDef(defs);
+            playGame(word, defs, syns, ants, exs);
+          } else if( hint == 2) {
+            var updatedSyns = showSyn(syns);
+            playGame(word, defs, updatedSyns, ants, exs);
+          } else if( hint == 3) {
+            showAnt(ants);
+            playGame(word, defs, syns, ants, exs);
+          } else {
+            console.log(word.shuffle());
+            playGame(word, defs, syns, ants, exs);
+          }
+        })
+      }
+    })
+  });
+}
+if (arguments.length === 1 && arguments[0] === "play") {
+  callApi("words.json", "randomWord","","");
+  client.get("randomWord", function(err, reply) {
+    console.log(reply);
+    perform(reply, "dict");
+    setTimeout(function(){
+      client.hgetall(reply, function(err, wordInf) {
+        var defs = wordInf.def;
+        var syns = wordInf.syn;
+        var ants = wordInf.ant;
+        var exs = wordInf.ex;
+        var def=syn=ant=ex=[];
+        def = (defs)?defs.split("\n"):"";
+        (def.length > 0)?def.pop():"";
+        syn = (syns)?syns.split("\n"):"";
+        (syn.length > 0)?syn.pop():"";
+        ant = (ants)?ants.split("\n"):"";
+        (ant.length > 0)?ant.pop():"";
+        ex = (exs)?exs.split("\n"):"";
+        (ex.length > 0)?ex.pop():"";
+        var playDef = def,playSyn = syn, playAnt = ant;
+        showDef(def);
+        showSyn(syn);
+        showAnt(ant);
+        playGame(reply, playDef,playSyn,playAnt,ex);
+      })
+    }, 1000)
+  })
+} else if(arguments.length === 1 || arguments[0] === "dict") {
+  word = (arguments.length === 1)?arguments[0]:arguments[1];
   perform(word, "dict");
 } else if(arguments.length === 0) {
   callApi("words.json","wordOfTheDay","","");
@@ -70,7 +205,7 @@ function callApi(apiType, word, choice, param) {
 
   var result = {};
 
-  if(word === "wordOfTheDay") {
+  if(word === "wordOfTheDay" || word === "randomWord") {
     choice = word;
     word = "";
   }
@@ -79,7 +214,7 @@ function callApi(apiType, word, choice, param) {
     path: '/v4/'+apiType+'/'+word+'/'+choice+'?'+param+'api_key=a2a73e7b926c924fad7001ca3111acd55af2ffabf50eb4ae5'
   };
 
-  if(choice === "wordOfTheDay") {
+  if(choice === "wordOfTheDay" || choice === "randomWord") {
     var newOptionsPath = options.path.replace("//","/");
     options.path = newOptionsPath;
   }
@@ -102,38 +237,59 @@ function callApi(apiType, word, choice, param) {
         });
         perform(name, "dict");
         return;
+      } 
+      if(choice === "randomWord") {
+        var name = result.word;
+        client.hmset(result.word, {
+          name: name
+        },  function(err, reply) {
+        });
+        client.set("randomWord", name);
+        return;
       }
       client.hgetall(word, function(err, wordObj) {
         if(choice === 'relatedWords' && result[0] ) {
           var onym = param.substr(18,3);
           var res = "";
           for( var i = 0 ; i < result[0].words.length; i++ ) {
-            res = res + "\n" + (i+1)+". "+result[0].words[i]+"\n";
+            res = res + (i+1)+". "+result[0].words[i]+"\n";
           }
           wordObj[onym] = res;
           client.hmset(word, wordObj, function(err, reply) {
-            console.log(("\nThe "+param.substr(18,3)+'onyms are: \n').toUpperCase());
-            console.log(res);
+            client.exists("randomWord", function(err, exist) {
+              if(exist != 1) {
+                console.log(('\nThe '+param.substr(18,3)+'onyms are: \n').toUpperCase());
+                console.log(res);
+              }
+            })
           });
         } else if( choice === 'definitions' && result) {
           var def = "";
           for( var i = 0 ; i < result.length; i++ ) {
-            def = def + "\n"+(i+1)+". "+result[i].text+"\n";
+            def = def +(i+1)+". "+result[i].text+"\n";
           }
           wordObj.def = def;
           client.hmset(word, wordObj, function(err, reply) {
-            console.log(("\nThe definitions are: \n").toUpperCase());
-            console.log(def);
+            client.exists("randomWord", function(err, exist) {
+              if(exist != 1) {
+                console.log(("\nThe definitions are: \n").toUpperCase());
+                console.log(def);
+              }
+            })
           });
         } else if(choice === 'examples' && result.examples) {
           var ex = "";
           for( var i = 0 ; i < result.examples.length; i++ ) {
-            ex = ex+ "\n"+(i+1)+". "+result.examples[i].text+"\n";
+            ex = ex+(i+1)+". "+result.examples[i].text+"\n";
           }
           wordObj.ex = ex;
           client.hmset(word, wordObj, function(err, reply) {
-            console.log(("\nThe examples are: \n").toUpperCase());
-            console.log(ex);
+            client.exists("randomWord", function(err, exist) {
+              if(exist != 1) {
+                console.log(("\nThe examples are: \n").toUpperCase());
+                console.log(ex);
+              }
+            })
           });
         }
 
