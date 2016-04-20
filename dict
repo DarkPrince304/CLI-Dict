@@ -73,7 +73,6 @@ String.prototype.shuffle = function () {
     return a.join("");
 }
 
-client.set("randomWord","immobile");
 function showDef(defs) {
   if(defs.length) {
     console.log("\nDEFINITION\n");
@@ -132,6 +131,7 @@ function playGame(word, defs, syns, ants, exs) {
     input = res.word;
     var out = matchWords(input, word, syns);
     if(out) {
+      client.del("randomWord");
       return;
     }
     console.log("\nWRONG GUESS? WHAT WILL YOU DO?\n1 - Try Again\n2 - Hint\n3 - Give up!\n");
@@ -164,32 +164,34 @@ function playGame(word, defs, syns, ants, exs) {
 }
 if (arguments.length === 1 && arguments[0] === "play") {
   callApi("words.json", "randomWord","","");
-  client.get("randomWord", function(err, reply) {
-    console.log(reply);
-    perform(reply, "dict");
-    setTimeout(function(){
-      client.hgetall(reply, function(err, wordInf) {
-        var defs = wordInf.def;
-        var syns = wordInf.syn;
-        var ants = wordInf.ant;
-        var exs = wordInf.ex;
-        var def=syn=ant=ex=[];
-        def = (defs)?defs.split("\n"):"";
-        (def.length > 0)?def.pop():"";
-        syn = (syns)?syns.split("\n"):"";
-        (syn.length > 0)?syn.pop():"";
-        ant = (ants)?ants.split("\n"):"";
-        (ant.length > 0)?ant.pop():"";
-        ex = (exs)?exs.split("\n"):"";
-        (ex.length > 0)?ex.pop():"";
-        var playDef = def,playSyn = syn, playAnt = ant;
-        showDef(def);
-        showSyn(syn);
-        showAnt(ant);
-        playGame(reply, playDef,playSyn,playAnt,ex);
-      })
-    }, 1000)
-  })
+  console.log("Fetching...");
+  setTimeout(function() {
+    client.get("randomWord", function(err, reply) {
+      perform(reply, "dict");
+      setTimeout(function(){
+        client.hgetall(reply, function(err, wordInf) {
+          var defs = wordInf.def;
+          var syns = wordInf.syn;
+          var ants = wordInf.ant;
+          var exs = wordInf.ex;
+          var def=syn=ant=ex=[];
+          def = (defs)?defs.split("\n"):"";
+          (def.length > 0)?def.pop():"";
+          syn = (syns)?syns.split("\n"):"";
+          (syn.length > 0)?syn.pop():"";
+          ant = (ants)?ants.split("\n"):"";
+          (ant.length > 0)?ant.pop():"";
+          ex = (exs)?exs.split("\n"):"";
+          (ex.length > 0)?ex.pop():"";
+          var playDef = def,playSyn = syn, playAnt = ant;
+          showDef(def);
+          showSyn(syn);
+          showAnt(ant);
+          playGame(reply, playDef,playSyn,playAnt,ex);
+        })
+      }, 1000)
+    })
+  }, 4000)
 } else if(arguments.length === 1 || arguments[0] === "dict") {
   word = (arguments.length === 1)?arguments[0]:arguments[1];
   perform(word, "dict");
@@ -256,8 +258,8 @@ function callApi(apiType, word, choice, param) {
           }
           wordObj[onym] = res;
           client.hmset(word, wordObj, function(err, reply) {
-            client.exists("randomWord", function(err, exist) {
-              if(exist != 1) {
+            client.get("randomWord", function(err, exist) {
+              if(exist == null) {
                 console.log(('\nThe '+param.substr(18,3)+'onyms are: \n').toUpperCase());
                 console.log(res);
               }
@@ -270,8 +272,8 @@ function callApi(apiType, word, choice, param) {
           }
           wordObj.def = def;
           client.hmset(word, wordObj, function(err, reply) {
-            client.exists("randomWord", function(err, exist) {
-              if(exist != 1) {
+            client.get("randomWord", function(err, exist) {
+              if(exist == null) {
                 console.log(("\nThe definitions are: \n").toUpperCase());
                 console.log(def);
               }
@@ -284,8 +286,8 @@ function callApi(apiType, word, choice, param) {
           }
           wordObj.ex = ex;
           client.hmset(word, wordObj, function(err, reply) {
-            client.exists("randomWord", function(err, exist) {
-              if(exist != 1) {
+            client.get("randomWord", function(err, exist) {
+              if(exist == null) {
                 console.log(("\nThe examples are: \n").toUpperCase());
                 console.log(ex);
               }
